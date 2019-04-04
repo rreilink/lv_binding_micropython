@@ -67,7 +67,7 @@ create_obj_pattern = re.compile('^lv_([^_]+)_create')
 lv_method_pattern = re.compile('^lv_[^_]+_(.+)', re.IGNORECASE)
 lv_base_obj_pattern = re.compile('^(struct _){0,1}lv_%s_t' % (base_obj_name))
 lv_callback_return_type_pattern = re.compile('^((void)|(lv_res_t))')
-lv_numstr_pattern = re.compile('^(.*)_NUMSTR')
+lv_strmacro_pattern = re.compile('^_LV_STR_(.*)')
 
 def simplify_identifier(id):
     return re.match(lv_func_pattern, id).group(1)
@@ -90,7 +90,7 @@ def method_name_from_func_name(func_name):
 
 def get_enum_name(enum):
     prefix = 'lv_'
-    return enum[len(prefix):]
+    return enum[len(prefix):] if enum.lower().startswith(prefix) else enum
 
 #
 # Initialization, data structures, helper functions
@@ -133,7 +133,7 @@ def get_enum_members(obj_name):
     if not obj_name in enums:
         return []
     prefix_len = len(obj_name)+1
-    return [enum_member_name[prefix_len:] for enum_member_name, value in enums[obj_name].items()]
+    return [(enum_member_name[prefix_len:], fullname) for enum_member_name, fullname in enums[obj_name].items()]
    
 # All object should inherit directly from base_obj, and not according to lv_ext, as disccussed on https://github.com/littlevgl/lv_binding_micropython/issues/19
 parent_obj_names = {child_name: base_obj_name for child_name in obj_names if child_name != base_obj_name} 
@@ -154,20 +154,22 @@ parent_obj_names[base_obj_name] = None
 enum_defs = [x for x in ast.ext if hasattr(x,'type') and isinstance(x.type, c_ast.Enum)]
 enums = collections.OrderedDict()
 for enum_def in enum_defs:
-    member_names = [member.name for member in enum_def.type.values.enumerators if not member.name.startswith('_')]
+    member_names = [member.name for member in enum_def.type.values.enumerators]
+    if all(member_name.startswith('_LV_STR_') for member_name in member_names):
+        member_names = [name[8:] for name in member_names]
+    else:
+        member_names = [name for name in member_names if not name.startswith('_')]
     enum_name = commonprefix(member_names)
     enum_name = "_".join(enum_name.split("_")[:-1]) # remove suffix 
     enum = collections.OrderedDict()
-    next_value = 0
     for member in enum_def.type.values.enumerators:
-        if member.name.startswith('_'):
+        name = member.name
+        if name.startswith('_LV_STR_'):
+            name = name[8:]
+        elif name.startswith('_'):
             continue
-        if member.value == None:
-            value = next_value
-        else:
-            value = int(member.value.value, 0)
-        enum[member.name] = value
-        next_value = value + 1
+
+        enum[name] = member.name # store original name (with _LV_STR_ if applicable)
     enums[enum_name] = enum
 
 # Enum member access functions.
@@ -177,17 +179,14 @@ for enum_def in enum_defs:
 def get_enum_member_name(enum_member):
     if enum_member[0].isdigit():
         enum_member = '_' + enum_member # needs to be a valid attribute name
-    match = re.match(lv_numstr_pattern, enum_member)
-    return match.group(1) if match else enum_member # remove NUMSTR suffix if present
+    return enum_member
 
-def get_enum_value(obj_name, enum_member):
+def get_enum_value(obj_name, enum_member, orig_name):
     fullname = '%s_%s' % (obj_name, enum_member)
-    match = re.match(lv_numstr_pattern, enum_member)
-    if match:
+    if orig_name.startswith('_LV_STR_'):
         enum = enums[obj_name]
         enum_member_name = '%s_%s' % (obj_name, enum_member)
-        numstr = ''.join("\\x%0.2x" % (ord(x) if isinstance(x, str) else x) for x in struct.pack('<i', enum[enum_member_name]))
-        print('MP_DEFINE_STR_OBJ(mp_%s, "%s");' % (enum_member_name, numstr))
+        print('MP_DEFINE_STR_OBJ(mp_%s, %s);' % (enum_member_name, enum_member_name))
         return "&mp_%s_%s" % (obj_name, enum_member)
     else:
         return "MP_ROM_INT(%s_%s)" % (obj_name, enum_member)
@@ -957,7 +956,7 @@ def gen_obj_methods(obj_name):
         parent_members += gen_obj_methods(parent_obj_names[obj_name])
     # add enum members
     enum_members = ["{{ MP_ROM_QSTR(MP_QSTR_{enum_member}), MP_ROM_PTR({enum_member_value}) }}".
-                    format(enum_member = get_enum_member_name(enum_memebr_name), enum_member_value = get_enum_value(obj_name, enum_memebr_name)) for enum_memebr_name in get_enum_members(obj_name)]
+                    format(enum_member = get_enum_member_name(enum_member_name), enum_member_value = get_enum_value(obj_name, enum_member_name, orig_name)) for enum_member_name, orig_name in get_enum_members(obj_name)]
     # add enums that match object name
     obj_enums = [enum_name for enum_name in enums.keys() if is_method_of(enum_name, obj_name)]
     enums_memebrs = ["{{ MP_ROM_QSTR(MP_QSTR_{name}), MP_ROM_PTR(&mp_{enum}_type) }}".
