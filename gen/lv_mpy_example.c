@@ -3,10 +3,10 @@
  * Auto-Generated file, DO NOT EDIT!
  *
  * Command line:
- * gen_mpy.py -X anim -X group -X task -I../../berkeley-db-1.xx/PORT/include -I../../lv_bindings/lvgl -I. -I../.. -Ibuild -I../../mp-readline -I ../../lv_bindings/pycparser/utils/fake_libc_include ../../lv_bindings/lvgl/lvgl.h
+ * gen_mpy.py -X anim -X group -X task -I../lvgl -I. -I ../pycparser/utils/fake_libc_include ../lvgl/lvgl.h -DLV_CONF_INCLUDE_SIMPLE
  *
  * Preprocessing command:
- * gcc -E -std=c99 -DPYCPARSER  -I ../../berkeley-db-1.xx/PORT/include -I ../../lv_bindings/lvgl -I . -I ../.. -I build -I ../../mp-readline -I ../../lv_bindings/pycparser/utils/fake_libc_include -include ../../lv_bindings/lvgl/lvgl.h ../../lv_bindings/lvgl/lvgl.h
+ * gcc -E -std=c99 -DPYCPARSER -DLV_CONF_INCLUDE_SIMPLE -I ../lvgl -I . -I ../pycparser/utils/fake_libc_include -include ../lvgl/lvgl.h ../lvgl/lvgl.h
  *
  * Generating Objects: obj(None), cont(obj), btn(obj), imgbtn(obj), label(obj), img(obj), line(obj), page(obj), list(obj), chart(obj), table(obj), cb(obj), bar(obj), slider(obj), led(obj), btnm(obj), kb(obj), ddlist(obj), roller(obj), ta(obj), canvas(obj), win(obj), tabview(obj), tileview(obj), mbox(obj), lmeter(obj), gauge(obj), sw(obj), arc(obj), preload(obj), calendar(obj), spinbox(obj)
  */
@@ -26,7 +26,7 @@
  * lvgl includes
  */
 
-#include "../../lv_bindings/lvgl/lvgl.h"
+#include "../lvgl/lvgl.h"
 
 
 /*
@@ -261,6 +261,7 @@ STATIC void* mp_to_ptr(mp_obj_t self_in)
 {
     void *result;
     mp_buffer_info_t buffer_info;
+    if (self_in == mp_const_none) return NULL;
     mp_get_buffer_raise(self_in, &buffer_info, MP_BUFFER_READ);
     if (buffer_info.len != sizeof(result) || buffer_info.typecode != BYTEARRAY_TYPECODE){
         nlr_raise(
